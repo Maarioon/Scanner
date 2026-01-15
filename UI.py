@@ -100,6 +100,9 @@ class CyberGauge(ctk.CTkCanvas):
         self.value_text = self.create_text(self.center_x, self.center_y - 10, text=str(int(self.min_val)), fill="white", font=(THEME["font_family"], 30, "bold"))
 
     def update_value(self, value):
+        if value is None:
+             value = self.min_val
+             
         self.value = value
         
         # Clamp value
@@ -165,7 +168,10 @@ class MotoSmartApp(ctk.CTk):
         self.init_motosmart_home()
         self.init_dashboard_view()
         self.init_service_functions_view()
+        self.init_dashboard_view()
+        self.init_service_functions_view()
         self.init_marketplace_view()
+        self.init_diagnostic_report_view() # NEW
         self.init_ai_view()
         self.init_tutorial_view()
         self.init_vci_connection_view()
@@ -277,6 +283,7 @@ class MotoSmartApp(ctk.CTk):
             c.pack(side="left", padx=10)
             c.configure(text=f"{icon}\n\n{title}\n{subt}", font=("Segoe UI", 16, "bold"))
 
+        discover_card("Smart Scan", "Full Check", "🔍", THEME["accent_primary"], "intelligent_diagnose")
         discover_card("Marketplace", "Shop Parts", "🛒", THEME["accent_primary"], "marketplace")
         discover_card("Car Hire", "Assistance", "🚗", "green", "assistance")
         discover_card("Settings", "App Config", "⚙️", "gray", "settings")
@@ -298,7 +305,7 @@ class MotoSmartApp(ctk.CTk):
              f.configure(text=f"{icon}\n{title}", font=("Segoe UI", 14, "bold"))
              
         # Row 0
-        grid_tile(0, 0, "Intelligent\nDiagnose", "☁️", "#2980b9", "intelligent_diagnose")
+        grid_tile(0, 0, "Smart Scan", "☁️", "#2980b9", "intelligent_diagnose")
         grid_tile(0, 1, "Local\nDiagnose", "🚘", "#c0392b", "local_diagnose")
         grid_tile(0, 2, "Service\nFunctions", "🔧", "#16a085", "service")
         
@@ -518,34 +525,122 @@ class MotoSmartApp(ctk.CTk):
 
     def open_vci_modal(self):
         modal = ctk.CTkFrame(self, fg_color="#080810", border_width=2, border_color="#333", corner_radius=20)
-        modal.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.6, relheight=0.6)
+        modal.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.85, relheight=0.85) # Maximized size to fit content
         
-        ctk.CTkLabel(modal, text="VCI CONNECTION", font=("Segoe UI", 24, "bold")).pack(pady=20)
-        ctk.CTkLabel(modal, text="Select adapter interface type", font=("Segoe UI", 14), text_color="gray").pack()
+        # Header (Compact)
+        ctk.CTkLabel(modal, text="VCI CONNECTION v1.1", font=("Segoe UI", 20, "bold")).pack(pady=(15, 5))
+        ctk.CTkLabel(modal, text="Select adapter interface type", font=("Segoe UI", 12), text_color="gray").pack()
         
-        btn_frame = ctk.CTkFrame(modal, fg_color="transparent")
-        btn_frame.pack(pady=30)
+        # Type Selection (Compact)
+        type_frame = ctk.CTkFrame(modal, fg_color="transparent")
+        type_frame.pack(pady=10)
         
         self.conn_type = tk.StringVar(value="bluetooth")
+        self.selected_device = tk.StringVar(value="")
         
-        def set_type(t):
-            self.conn_type.set(t)
-            # Visual feedback would go here
-            
-        b_bt = ctk.CTkButton(btn_frame, text="Bluetooth", width=140, height=100, corner_radius=15, 
-                             font=("Segoe UI", 18), fg_color="#2962FF", command=lambda: set_type("bluetooth"))
-        b_bt.pack(side="left", padx=10)
+        btn_bt = ctk.CTkButton(type_frame, text="Bluetooth", width=120, height=40, corner_radius=10, 
+                             font=("Segoe UI", 14, "bold"), fg_color="#2962FF", 
+                             command=lambda: self.scan_devices("bluetooth"))
+        btn_bt.pack(side="left", padx=10)
         
-        b_wifi = ctk.CTkButton(btn_frame, text="Wi-Fi", width=140, height=100, corner_radius=15, 
-                               font=("Segoe UI", 18), fg_color="#212121", hover_color="#333", command=lambda: set_type("wifi"))
-        b_wifi.pack(side="left", padx=10)
+        btn_wifi = ctk.CTkButton(type_frame, text="Wi-Fi", width=120, height=40, corner_radius=10, 
+                               font=("Segoe UI", 14, "bold"), fg_color="#333", hover_color="#444", 
+                               command=lambda: self.scan_devices("wifi"))
+        btn_wifi.pack(side="left", padx=10)
         
-        ctk.CTkButton(modal, text="CONNECT", width=200, height=50, fg_color="#00C853", font=("Segoe UI", 18, "bold"),
-                      command=lambda: [modal.destroy(), self.connect_simulated()]).pack(side="bottom", pady=30)
+        # Device List Area (Reduced height)
+        self.device_list_frame = ctk.CTkScrollableFrame(modal, fg_color="#111", height=150, label_text="Discovered Devices")
+        self.device_list_frame.pack(fill="x", padx=20, pady=10)
+        
+        # Status Label
+        self.scan_status = ctk.CTkLabel(self.device_list_frame, text="Select an interface above to scan", text_color="gray")
+        self.scan_status.pack(pady=20)
+        
+        # Connect Button
+        # Connect Button
+        self.btn_connect = ctk.CTkButton(modal, text="CONNECT", width=200, height=50, fg_color=THEME["accent_green"], 
+                      font=("Segoe UI", 18, "bold"), state="disabled",
+                      command=lambda: self.perform_connection(modal))
+        self.btn_connect.pack(side="bottom", pady=15)
 
-    def connect_simulated(self):
-        self.vci_status.configure(text=f"CONNECTED ({self.conn_type.get().upper()})", text_color="#00C853")
-        # Trigger actual backend connect here if valid
+    def scan_devices(self, mode):
+        self.conn_type.set(mode)
+        
+        # Clear list
+        for widget in self.device_list_frame.winfo_children():
+            widget.destroy()
+            
+        self.scan_status = ctk.CTkLabel(self.device_list_frame, text=f"Scanning for {mode} devices...", text_color=THEME["accent_primary"])
+        self.scan_status.pack(pady=20)
+        
+        def run_scan():
+            time.sleep(1.5) # Simulate scan time
+            
+            devices = []
+            if mode == "bluetooth":
+                # Try to find real COM ports
+                try:
+                    import serial.tools.list_ports
+                    ports = serial.tools.list_ports.comports()
+                    for p in ports:
+                        devices.append(f"{p.device} - {p.description}")
+                except:
+                    pass
+                
+                # Add Demo/Mock devices if none found or for testing
+                if not devices:
+                    devices.append("DEMO OBDII ADAPTER")
+            else:
+                devices.append("192.168.0.10:35000 (WiFi OBD)")
+            
+            # Update UI
+            self.after(0, lambda: self.show_scan_results(devices))
+            
+        threading.Thread(target=run_scan, daemon=True).start()
+
+    def show_scan_results(self, devices):
+        for widget in self.device_list_frame.winfo_children():
+            widget.destroy()
+            
+        if not devices:
+            ctk.CTkLabel(self.device_list_frame, text="No devices found", text_color="red").pack(pady=10)
+            ctk.CTkLabel(self.device_list_frame, text="💡 Tip: Pair your OBD adapter in Windows\nBluetooth Settings first!", text_color="gray", font=("Segoe UI", 12)).pack(pady=5)
+            return
+
+        for dev in devices:
+            btn = ctk.CTkButton(self.device_list_frame, text=f"🔗 {dev}", height=40, fg_color="#333", anchor="w",
+                                command=lambda d=dev: self.select_device(d))
+            btn.pack(fill="x", pady=2, padx=5)
+
+    def select_device(self, device_name):
+        self.selected_device.set(device_name)
+        # Highlight logic could go here (reset all buttons colors, highlight selected)
+        self.btn_connect.configure(state="normal", text=f"CONNECT: {device_name.split(' - ')[0]}")
+
+    def perform_connection(self, modal):
+        device = self.selected_device.get()
+        # Parse port from string "COM3 - USB Serial" -> "COM3"
+        port = device.split(' - ')[0]
+        if "DEMO" in port: port = "DEMO" # Explicitly trigger demo mode in backend
+        if "WiFi" in port: port = None # Logic for wifi not implemented in backend yet, strictly speaking
+        
+        # Call Backend
+        def connect_thread():
+            try:
+                import requests
+                # Send port to backend
+                requests.post("http://localhost:8000/connect", params={"port": port})
+                self.after(0, lambda: [modal.destroy(), self.on_connect_success(device)])
+            except Exception as e:
+                print(f"Connection failed: {e}")
+                
+        threading.Thread(target=connect_thread, daemon=True).start()
+
+    def on_connect_success(self, device_name):
+        self.connected = True
+        self.vci_status.configure(text=f"CONNECTED: {device_name}", text_color=THEME["accent_green"])
+        # Redirect to Dashboard or Smart Scan
+        self.show_view("intelligent_diagnose") # Optional auto-redirect
 
 
     def init_terminal_view(self):
@@ -691,18 +786,22 @@ class MotoSmartApp(ctk.CTk):
         self.ws_thread.start()
 
     def update_ui(self, data):
-        # Update Dashboard Gauges
-        if "rpm" in data:
-            self.gauge_rpm.update_value(data["rpm"])
-        if "speed" in data:
-            self.gauge_speed.update_value(data["speed"])
-        if "coolant_temp" in data:
-            self.stat_temp_gauge.update_value(data["coolant_temp"])
-        
-        # Check for Demo Mode flag (Connection status update)
-        if data.get("status") == "DEMO_MODE" and not self.connected:
-            self.vci_status.configure(text="DEMO MODE ACTIVE", text_color="orange")
-            self.connected = True
+        try:
+            # Update Dashboard Gauges
+            if "rpm" in data:
+                self.gauge_rpm.update_value(data["rpm"])
+            if "speed" in data:
+                self.gauge_speed.update_value(data["speed"])
+            if "coolant_temp" in data:
+                self.stat_temp_gauge.update_value(data["coolant_temp"])
+            
+            # Check for Demo Mode flag (Connection status update)
+            if data.get("status") == "DEMO_MODE" and not self.connected:
+                self.vci_status.configure(text="DEMO MODE ACTIVE", text_color="orange")
+                self.connected = True
+                
+        except Exception as e:
+            print(f"UI Update Error: {e}")
 
     # ==========================================
     # DIAGZONE MODULE IMPLEMENTATIONS
@@ -712,9 +811,15 @@ class MotoSmartApp(ctk.CTk):
         view = ctk.CTkFrame(self.view_container, fg_color="transparent")
         
         # Header
-        ctk.CTkLabel(view, text="Intelligent Diagnose", font=("Segoe UI", 24, "bold"), text_color="white").pack(pady=20)
+        ctk.CTkLabel(view, text="Smart Scan", font=("Segoe UI", 24, "bold"), text_color="white").pack(pady=20)
         
-        # Animation Canvas
+        # Button (Pack First to ensure visibility at bottom)
+        btn = ctk.CTkButton(view, text="START SCAN", height=60, width=200, fg_color=THEME["accent_green"],
+                            font=("Segoe UI", 20, "bold"),
+                            command=self.run_intelligent_diagnose_anim)
+        btn.pack(side="bottom", pady=40)
+
+        # Animation Canvas (Pack last to fill remaining space)
         anim_frame = ctk.CTkFrame(view, fg_color="transparent")
         anim_frame.pack(expand=True)
         
@@ -726,24 +831,110 @@ class MotoSmartApp(ctk.CTk):
             lbl.pack(pady=10)
             self.step_labels.append(lbl)
             
-        btn = ctk.CTkButton(view, text="START AUTO-NOSTICS", height=50, width=200, fg_color=THEME["accent_primary"],
-                            command=self.run_intelligent_diagnose_anim)
-        btn.pack(pady=40)
-        
         self.views["intelligent_diagnose"] = view
 
+
+
     def run_intelligent_diagnose_anim(self):
-        def sequence():
-            for i, lbl in enumerate(self.step_labels):
-                lbl.configure(text_color="white") # Highlight current
-                # Show loading spinner or similar?
-                time.sleep(1)
-                lbl.configure(text=lbl.cget("text") + " ✔️", text_color=THEME["accent_green"])
+        # Disable button to prevent double click? (Optional)
+        
+        # Step 1: Animation Sequence handled safely on main thread via recursive after or pre-scheduled
+        
+        def update_step(step_index):
+            if step_index > 0:
+                 # Mark previous as done
+                 self.step_labels[step_index-1].configure(text=self.step_labels[step_index-1].cget("text") + " ✔️", text_color=THEME["accent_green"])
             
-            # Use after() to modify UI from thread safely
-            self.after(500, lambda: self.show_view("dashboard"))
+            if step_index < len(self.step_labels):
+                # Highlight current
+                self.step_labels[step_index].configure(text_color="white")
+                # Schedule next step
+                self.after(800, lambda: update_step(step_index + 1))
+            else:
+                # Finished - Fetch and Show
+                self.finish_diagnose()
+
+        # Reset labels first
+        steps = ["Connecting VCI...", "Reading VIN...", "Decoding VIN...", "Vehicle Matched"]
+        for i, lbl in enumerate(self.step_labels):
+            lbl.configure(text=steps[i], text_color="gray")
+
+        # Start sequence
+        update_step(0)
+
+    def finish_diagnose(self):
+         def fetch_and_show():
+            try:
+                import requests
+                # requests is blocking, run in thread to avoid freeze, then callback to UI
+                response = requests.get("http://localhost:8000/diagnostics/codes")
+                codes = response.json().get("codes", [])
+            except:
+                codes = []
             
-        threading.Thread(target=sequence, daemon=True).start()
+            # Update UI on main thread
+            self.after(0, lambda: [self.populate_diagnostic_report(codes), self.show_view("diagnostic_report")])
+
+         threading.Thread(target=fetch_and_show, daemon=True).start()
+    def init_diagnostic_report_view(self):
+        view = ctk.CTkFrame(self.view_container, fg_color="transparent")
+        
+        # Header
+        header = ctk.CTkFrame(view, fg_color="transparent")
+        header.pack(fill="x", pady=20)
+        ctk.CTkButton(header, text="< Back", width=60, fg_color="transparent", command=lambda: self.show_view("home")).pack(side="left", padx=10)
+        ctk.CTkLabel(header, text="Diagnostic Report", font=("Segoe UI", 24, "bold"), text_color="white").pack(side="left", padx=20)
+        
+        # Report Container
+        self.report_frame = ctk.CTkScrollableFrame(view, fg_color="transparent")
+        self.report_frame.pack(fill="both", expand=True, padx=20)
+        
+        # Controls
+        controls = ctk.CTkFrame(view, fg_color="#101010", height=60)
+        controls.pack(fill="x")
+        
+        ctk.CTkButton(controls, text="CLEAR CODES", width=150, fg_color="#c0392b", 
+                      command=self.clear_codes_action).pack(side="right", padx=20, pady=10)
+        ctk.CTkButton(controls, text="EMAIL REPORT", width=150, fg_color="#2980b9",
+                      command=lambda: print("Email sent")).pack(side="right", padx=0, pady=10)
+                      
+        self.views["diagnostic_report"] = view
+
+    def populate_diagnostic_report(self, codes):
+        for widget in self.report_frame.winfo_children():
+            widget.destroy()
+            
+        if not codes:
+            ctk.CTkLabel(self.report_frame, text="✅ No Fault Codes Detected", font=("Segoe UI", 20), text_color=THEME["accent_green"]).pack(pady=50)
+            return
+
+        ctk.CTkLabel(self.report_frame, text=f"Found {len(codes)} Issues", font=("Segoe UI", 16, "bold"), text_color="#ff5555").pack(anchor="w", pady=10)
+        
+        for dtc in codes:
+            card = ctk.CTkFrame(self.report_frame, fg_color=THEME["card_bg"], border_width=1, border_color="#ff5555" if dtc['severity'] == 'critical' else "#444")
+            card.pack(fill="x", pady=5)
+            
+            # Icon
+            color = "#ff5555" if dtc['severity'] == "critical" else "#f1c40f"
+            ctk.CTkLabel(card, text="⚠️", text_color=color, font=("Arial", 24)).pack(side="left", padx=15)
+            
+            # Info
+            info = ctk.CTkFrame(card, fg_color="transparent")
+            info.pack(side="left", fill="x", expand=True, pady=10)
+            ctk.CTkLabel(info, text=dtc['code'], font=("Segoe UI", 18, "bold"), text_color="white", anchor="w").pack(fill="x")
+            ctk.CTkLabel(info, text=dtc['description'], font=("Segoe UI", 14), text_color="#ccc", anchor="w").pack(fill="x")
+            
+    def clear_codes_action(self):
+        # Call backend to clear (simulated)
+        import requests
+        try:
+           requests.post("http://localhost:8000/diagnostics/clear")
+           self.populate_diagnostic_report([])
+        except:
+           pass
+
+
+
 
     def init_local_diagnose_view(self):
         view = ctk.CTkFrame(self.view_container, fg_color="transparent")

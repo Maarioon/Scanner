@@ -64,10 +64,16 @@ class OBDConnection:
         """Initialize OBD connection"""
         self.connection = None
         self.port = port
+        self.demo_mode = False
         
     def connect(self) -> bool:
         """Connect to vehicle via OBD-II"""
         try:
+            if self.port == "DEMO":
+                print("Starting DEMO mode connection")
+                self.demo_mode = True
+                return True
+                
             if self.port:
                 self.connection = obd.OBD(self.port)
             else:
@@ -87,6 +93,9 @@ class OBDConnection:
     
     def get_vehicle_info(self) -> VehicleInfo:
         """Get basic vehicle information"""
+        if self.demo_mode:
+            return VehicleInfo(vin="1M8GDM9A_KP042788", protocol="ISO 15765-4 CAN (11 bit ID, 500 kbaud)", connected=True)
+
         if not self.connection or not self.connection.is_connected():
             return VehicleInfo(connected=False)
         
@@ -106,6 +115,18 @@ class OBDConnection:
     
     def read_sensor_data(self) -> SensorData:
         """Read real-time sensor data from vehicle"""
+        if self.demo_mode:
+             import random
+             return SensorData(
+                 timestamp=datetime.now().isoformat(),
+                 rpm=random.randint(800, 3000),
+                 speed=random.randint(0, 120),
+                 coolant_temp=random.randint(80, 110),
+                 engine_load=random.uniform(10, 50),
+                 throttle_position=random.uniform(0, 40),
+                 fuel_level=random.uniform(30, 90)
+             )
+
         if not self.connection or not self.connection.is_connected():
             raise Exception("Not connected to vehicle")
         
@@ -149,6 +170,13 @@ class OBDConnection:
     
     def get_diagnostic_codes(self) -> List[DiagnosticTroubleCode]:
         """Read Diagnostic Trouble Codes (DTCs)"""
+        if self.demo_mode:
+            return [
+                DiagnosticTroubleCode(code="P0300", description="Random/Multiple Cylinder Misfire Detected", severity="critical"),
+                DiagnosticTroubleCode(code="P0171", description="System Too Lean (Bank 1)", severity="warning"),
+                DiagnosticTroubleCode(code="C0035", description="Left Front Wheel Speed Sensor Supply Voltage Circuit", severity="info")
+            ]
+
         if not self.connection or not self.connection.is_connected():
             raise Exception("Not connected to vehicle")
         
@@ -304,7 +332,10 @@ async def websocket_sensors(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
     finally:
-        await websocket.close()
+        try:
+            await websocket.close()
+        except:
+            pass # Already closed
 
 # ===========================
 # Run Server
